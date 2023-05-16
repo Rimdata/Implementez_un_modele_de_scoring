@@ -5,15 +5,16 @@ import pickle
 import shap
 import matplotlib.pyplot as plt
 
-import plotly.graph_objs as go
+import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import plotly.express as px
 #---------------------------------#
 # Page layout
 ## Page expands to full width
 st.set_page_config(layout="wide")
 #---------------------------------#
 #st.title('Tableau de bord de gestion de crédit')
-st.write("<span style='font-size: 50px; text-align: center;'> <b>Tableau de bord de gestion de crédit </b></span>", unsafe_allow_html=True)
+st.write("<span style='font-size: 50px; text-align: center;'> <b>Gestionnaire de crédit </b></span>", unsafe_allow_html=True)
 st.markdown(""" 
 Ce tableau de bord prédit la probabilité qu'un client rembourse son crédit puis classe sa demande en crédit a accordé ou crédit refusé. 
 """)
@@ -62,10 +63,13 @@ if prediction == 0 :
 # https://github.com/slundberg/shap
 explainer = shap.Explainer(load_clf["clf"])
 X_ = pd.DataFrame(load_clf['scaler'].transform(X), columns = X.columns)
-shap_values = explainer(X_)[:, :, 0]
+shap_values = explainer(X_)[:, :, 1]
 shap_values.data = X.values
 col2.header('Feature Importance')
-
+col2.markdown(""" 
+* <span style="color:red">Les variables en rouge **défavorisent** l'accord du crédit</span>.  
+* <span style="color:blue"> Les variables en bleu  **favorisent** l'accord du crédit</span>. 
+""", unsafe_allow_html=True)
 fig, ax = plt.subplots()
 ax.set_title('Feature importance based on SHAP values')
 #shap.summary_plot(shap_values, X)
@@ -73,11 +77,8 @@ shap.plots.waterfall(shap_values[0])
 col2.pyplot(fig, bbox_inches='tight')
 col2.write('---')
 
-
 #-------------------
-import plotly.graph_objects as go
-
-
+# la bare du score
 fig = go.Figure(go.Indicator(
     mode = "number+gauge+delta", value = proba_remboursement,
     number = {'suffix': "%"},
@@ -95,8 +96,96 @@ fig = go.Figure(go.Indicator(
             {'range': [0, 50], 'color': "lightgray"},
             {'range': [50, 100], 'color': "gray"}],
         'bar': {'color': "red" if prediction == 1 else "green" ,  'thickness': 0.5}}))
-
-
-
 fig.update_layout(width=400, height=300)
 col3.plotly_chart(fig)
+
+#----------------------------------------
+# Positionnement du client par rapport à l'ensemble de clients
+col2.header("Positionnement du client par rapport à l'ensemble de clients")
+col2.markdown("La ligne noire corréspond à la valeur du client séléctionné")
+
+df["TARGET_"] = df["TARGET"].apply(lambda x: "Client à Risque" if x else "Client fiable")
+
+
+for feature in selected_features: 
+    # The individual's value stored in a variable called "individual_value"
+    individual_value = X[feature].values[0]
+
+    # Create the histogram with marginal box plots
+    fig = px.histogram(df,
+                       x=feature,
+                       color="TARGET_",
+                       marginal="box",  # can be `box`, `violin`
+                       hover_data=df.columns,
+                       labels={"TARGET_": "Client"},
+                       color_discrete_sequence=['rgba(255, 0, 0, 0.8)', 'rgba(0, 0, 255, 0.8)'])
+
+    # Add a vertical line for the individual value
+    fig.add_shape(
+        type="line",
+        x0=individual_value,
+        x1=individual_value,
+        yref='paper',  # Set yref to 'paper' to span the entire height of the figure
+        y0=0,
+        y1=1,
+        line=dict(color="black", width=4, dash="dash")
+    )
+
+    # Update layout for better visibility of the vertical line
+    fig.update_layout(
+        showlegend=True,
+        title_text="Client sélectionné",
+        xaxis_title=feature,
+        yaxis_title="Count",
+        bargap=0.1
+    )
+    
+    # Show the figure
+    col2.plotly_chart(fig)
+
+#--------------------------------
+X_ = df.iloc[:, 2:-1]
+df['score'] = load_clf.predict_proba(X_)[:, 0]
+
+# Parcourir la liste pour générer tous les couples de features selectionnées
+couples_feat = []
+for i in range(len(selected_features)):
+    for j in range(i+1, len(selected_features)):
+        couple_feat = (selected_features[i], selected_features[j])
+        couples_feat.append(couple_feat)
+        
+for feat in couples_feat: 
+    fig = go.Figure(data=[go.Scatter(
+        x=df[feat[0]], #
+        y=df[feat[1]],
+        mode='markers',
+        marker=dict(
+            color=df["score"],
+            size=10,
+            showscale=True,
+            colorscale="RdBu",
+            colorbar=dict(
+                title="Score",
+                tickmode="array",
+                ticks="outside",
+            ))
+    )])
+    
+    fig.add_trace(go.Scatter(
+    x=X[feat[0]],  # Coordonnée x du point noir
+    y=X[feat[1]],  # Coordonnée y du point noir
+    mode='markers',
+    marker=dict(
+        color='black',  # Couleur du point noir
+        size=10),
+    ))
+    
+    fig.update_layout(
+        title="Scatter Plot",
+        xaxis=dict(title=feat[0]),
+        yaxis=dict(title=feat[1]),
+        showlegend=False,
+    )
+    # Show the figure
+    col2.plotly_chart(fig)
+
