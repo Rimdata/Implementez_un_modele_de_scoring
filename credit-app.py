@@ -1,28 +1,30 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from PIL import Image
 import pickle
-import shap
+
 import matplotlib.pyplot as plt
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
+import requests
+import json
+import shap
 #---------------------------------#
 # Page layout
 ## Page expands to full width
 st.set_page_config(layout="wide")
+st.balloons()
 #---------------------------------#
 #st.title('Tableau de bord de gestion de crédit')
-st.write("<span style='font-size: 50px; text-align: center;'> <b>Gestionnaire de crédit </b></span>", unsafe_allow_html=True)
-st.markdown(""" 
-Ce tableau de bord prédit la probabilité qu'un client rembourse son crédit puis classe sa demande en crédit a accordé ou crédit refusé. 
-""")
+#st.write("<span style='font-size: 50px; text-align: center;'> <b>Gestionnaire de crédit </b></span>", unsafe_allow_html=True)
+
 #---------------------------------#
 # Page layout (continued)
 ## Divide page to 3 columns (col1 = sidebar, col2 and col3 = page contents)
 col1 = st.sidebar
-col2, col3 = st.columns((1,1))
 #---------------------------------#
 df = pd.read_csv("data/traited/df_credit_dash.csv")
 features = list(df.iloc[:, 2:].columns)
@@ -36,68 +38,116 @@ selected_client = col1.selectbox('Identifiant Client', list(df['SK_ID_CURR']))
 selected_features = col1.multiselect('Variables', features)
 
 #---------------------------------#
+col2, col3 = st.columns((2,1))
+col31, col32 = col3.columns((1,3))
+image = Image.open('OC.png')
+col31.image(image, width = 100, use_column_width=True)
+image = Image.open('credit.png')
+col32.image(image, width = 400, use_column_width=True)
 
+col2.write("<span style='font-size: 50px; text-align: center;'> <b>Gestionnaire de crédit </b></span>", unsafe_allow_html=True)
+col2.markdown(""" 
+Ce tableau de bord prédit la probabilité qu'un client rembourse son crédit et classe sa demande en crédit accordé/refusé. 
+""")
+
+#-----------------------------------#
 # Reads in saved classification model
-load_clf = pickle.load(open('lgbm_model.pkl', 'rb'))
+# load_clf = pickle.load(open('lgbm_model.pkl', 'rb'))
 
-# Apply model to make predictions
+# # Apply model to make predictions
 X = df.loc[df['SK_ID_CURR'] == selected_client, df.columns[2:]]
-prediction = load_clf.predict(X)
-prediction_proba = load_clf.predict_proba(X)
+# prediction = load_clf.predict(X)
+# prediction_proba = load_clf.predict_proba(X)
 
+
+api_url = 'http://localhost:5000/predict'
+data = {'client_id': selected_client}
+print(data)
+response = requests.get(api_url, json=data)
+
+if response.status_code == 200:
+    result = response.json()
+    prediction = result['prediction']
+    prediction_proba = result['prediction_proba']
+    shap_values = json.loads(result['shap_values'])
+    print('Score de prédiction pour client1 :', prediction_proba * 100)
+else:
+    print("Erreur lors de l'appel de l'API")
+    
+#-----------------------------------#
 decision = "crédit accordé" if prediction == 0 else "crédit refusé" 
-proba_remboursement = round(prediction_proba[0][0] * 100)
 
-col2.write("<span style='font-size: 24px'> <b>Client : <span style='color: gray; font-size:1.1em'> {} </span> </b></span>".format(str(selected_client)), unsafe_allow_html=True)
+proba_remboursement = round(prediction_proba * 100)
+
+col21, col22 = col2.columns((1,1))
+col21.write("<span style='font-size: 24px'> <b>Client : <span style='color: gray; font-size:1.1em'> {} </span> </b></span>".format(str(selected_client)), unsafe_allow_html=True)
 
 if prediction == 1 :
-    col2.write("<span style='font-size: 24px'> <b>Probabilité de remboursement : <span style='color: red; font-size:1.5em'> {} % </span> </b></span>".format(str(proba_remboursement)), unsafe_allow_html=True)
-    col2.write("<span style='font-size: 24px'> <b> Etat de la demande : <span style='color: red; font-size:1.5em'> {} </span> </b></span>".format(decision), unsafe_allow_html=True) 
+    col21.write("<span style='font-size: 24px'> <b>Probabilité de remboursement : \n  <span style='color: red; font-size:1.2em'> {} % </span> </b></span>".format(str(proba_remboursement)), unsafe_allow_html=True)
+    col21.write("<span style='font-size: 24px'> <b> Etat de la demande : <span style='color: red; font-size:1.2em'> {} </span> </b></span>".format(decision), unsafe_allow_html=True) 
 if prediction == 0 :
-    col2.write("<span style='font-size: 24px'> <b>Probabilité de remboursement : <span style='color: green; font-size:1.5em'> {} % </span> </b></span>".format(str(proba_remboursement)), unsafe_allow_html=True)
-    col2.write("<span style='font-size: 24px'> <b> Etat de la demande : <span style='color: green; font-size:1.5em'> {} </span> </b></span>".format(decision), unsafe_allow_html=True) 
-
-
-#-------------------------------#
-# Explaining the model's predictions using SHAP values
-# https://github.com/slundberg/shap
-explainer = shap.Explainer(load_clf["clf"])
-X_ = pd.DataFrame(load_clf['scaler'].transform(X), columns = X.columns)
-shap_values = explainer(X_)[:, :, 1]
-shap_values.data = X.values
-col2.header('Feature Importance')
-col2.markdown(""" 
-* <span style="color:red">Les variables en rouge **défavorisent** l'accord du crédit</span>.  
-* <span style="color:blue"> Les variables en bleu  **favorisent** l'accord du crédit</span>. 
-""", unsafe_allow_html=True)
-fig, ax = plt.subplots()
-ax.set_title('Feature importance based on SHAP values')
-#shap.summary_plot(shap_values, X)
-shap.plots.waterfall(shap_values[0])
-col2.pyplot(fig, bbox_inches='tight')
-col2.write('---')
+    col21.write("<span style='font-size: 24px'> <b>Probabilité de remboursement : <span style='color: blue; font-size:1.2em'> {} % </span> </b></span>".format(str(proba_remboursement)), unsafe_allow_html=True)
+    col21.write("<span style='font-size: 24px'> <b> Etat de la demande : <span style='color: blue; font-size:1em'> {} </span> </b></span>".format(decision), unsafe_allow_html=True) 
 
 #-------------------
 # la bare du score
 fig = go.Figure(go.Indicator(
-    mode = "number+gauge+delta", value = proba_remboursement,
-    number = {'suffix': "%"},
-    domain = {'x': [0, 1], 'y': [0, 1]},
-    delta = {'reference': 50, 'position': "top"},
-    title = {'text':"<b>Profit</b><br><span style='color: gray; font-size:0.8em'>U.S. $</span>", 'font': {"size": 14}},
-    gauge = {
-        'shape': "bullet",
-        'axis': {'range': [None, 100]},
-        'threshold': {
-            'line': {'color': "red", 'width': 0},
-            'thickness': 0.75, 'value': 50},
-        'bgcolor': "white",
-        'steps': [
-            {'range': [0, 50], 'color': "lightgray"},
-            {'range': [50, 100], 'color': "gray"}],
-        'bar': {'color': "red" if prediction == 1 else "green" ,  'thickness': 0.5}}))
-fig.update_layout(width=400, height=300)
-col3.plotly_chart(fig)
+        mode = "number+gauge+delta",
+        value = proba_remboursement,
+        number = {'suffix': "%"},
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        delta = {'reference': 50, 'position': "top"},
+        title = {'text': "Score client"},
+        gauge = {
+            #'shape': "bullet",
+            'axis': {'range': [None, 100]},
+            'threshold': {'line': {'color': "red", 'width': 0},
+                          'thickness': 0.75,
+                          'value': 50},
+            'bgcolor': "white",
+            'steps': [
+                {'range': [0, 50], 'color': "lightgray"},
+                {'range': [50, 100], 'color': "gray"}],
+            'bar': {'color': "red" if prediction == 1 else "blue" ,  'thickness': 0.5}}))
+fig.update_layout(width=350, height=350)
+col22.plotly_chart(fig)
+
+st.write('---')
+col2, col3 = st.columns((2,1))
+#-------------------------------#
+col2.header('Profil client: ' + str(selected_client))
+col2.markdown(""" 
+* <span style="color:red">Les variables en rouge **défavorisent** l'accord du crédit</span>.  
+* <span style="color:blue"> Les variables en bleu  **favorisent** l'accord du crédit</span>. 
+""", unsafe_allow_html=True)
+# Explaining the model's predictions using SHAP values
+# https://github.com/slundberg/shap
+# explainer = shap.Explainer(load_clf["clf"])
+# X_ = pd.DataFrame(load_clf['scaler'].transform(X), columns = X.columns)
+# shap_values = explainer(X_)[:, :, 1]
+# shap_values.data = X.values
+
+explanation = shap.Explanation(values=np.array(shap_values["values"]),
+                               base_values=shap_values["base_values"],
+                               data=np.array(shap_values["data"]))
+fig, ax = plt.subplots()
+ax.set_title('Feature importance based on SHAP values')
+shap.plots.waterfall(explanation)
+col2.pyplot(fig, bbox_inches='tight')
+
+#---------------------------
+col3.header('Feature importance globale')
+col3.markdown(""" Les variables les plus importantes pour le modèle de prédiction sont: 
+* **Ext_source_1, Ext_source_2, Ext_source_3**: 3 scores normalisés d'une souce extérieur
+* **DAYS_BIRTH** : - l'âge du client calculé en jour 
+* **CLOSED_DAYS_CREDIT**: Combien de jours avant la demande actuelle le client a-t-il demandé un crédit au bureau de crédit
+* **PREV_DAYS_DECISION_MIN**: Combien de jours avant la décision concernant les demandes précédentes
+* **PREV_NAME_PRODUCT_TYPE_XNA_MEAN**: 
+""", unsafe_allow_html=True)
+# Sidebar + Main panel
+image = Image.open('lgbm_importances.png')
+col3.image(image, width = 200, use_column_width=True)
+st.write('---')
 
 #----------------------------------------
 # Positionnement du client par rapport à l'ensemble de clients
@@ -144,6 +194,7 @@ for feature in selected_features:
     col2.plotly_chart(fig)
 
 #--------------------------------
+load_clf = pickle.load(open('lgbm_model.pkl', 'rb'))
 X_ = df.iloc[:, 2:-1]
 df['score'] = load_clf.predict_proba(X_)[:, 0]
 
@@ -177,7 +228,7 @@ for feat in couples_feat:
     mode='markers',
     marker=dict(
         color='black',  # Couleur du point noir
-        size=10),
+        size=20),
     ))
     
     fig.update_layout(
@@ -188,4 +239,5 @@ for feat in couples_feat:
     )
     # Show the figure
     col2.plotly_chart(fig)
+#----------------------------------------------
 
