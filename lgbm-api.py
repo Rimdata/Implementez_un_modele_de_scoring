@@ -10,17 +10,13 @@ app = Flask(__name__)
 
 # Charger le modèle de classifieur
 classifier = pickle.load(open('lgbm_model.pkl', 'rb'))
-df = pd.read_csv("data/traited/df_credit_dash.csv")
-features = df.columns[2:]
-
 
 @app.route('/predict', methods=['GET'])
 def predict():
-   
-    data = request.get_json()  # Récupérer les données envoyées en tant que JSON
-    selected_client = data["client_id"]
     
-    X = df.loc[df['SK_ID_CURR'] == selected_client, features]
+    # Récupérer les données envoyées en tant que JSON
+    data = request.get_json() 
+    X = pd.read_json(data["client_feat"])
     
     # Effectuer la prédiction
     prediction = classifier.predict(X)[0]
@@ -36,9 +32,8 @@ def predict():
           "data": shap_values[0].data.tolist()}
     sh_json = json.dumps(sh)
     
-#     # Renvoyer la réponse sous forme de JSON
-    response = {'ID': selected_client,
-                'prediction': prediction,
+    # Renvoyer la réponse sous forme de JSON
+    response = {'prediction': prediction,
                 'prediction_proba': prediction_proba, # Récupérer le score 
                 'shap_values': sh_json}  
     

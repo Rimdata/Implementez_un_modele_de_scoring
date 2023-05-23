@@ -17,19 +17,19 @@ import shap
 ## Page expands to full width
 st.set_page_config(layout="wide")
 st.balloons()
-#---------------------------------#
-#st.title('Tableau de bord de gestion de crédit')
-#st.write("<span style='font-size: 50px; text-align: center;'> <b>Gestionnaire de crédit </b></span>", unsafe_allow_html=True)
 
 #---------------------------------#
-# Page layout (continued)
-## Divide page to 3 columns (col1 = sidebar, col2 and col3 = page contents)
+@st.cache_data  # 👈 Add the caching decorator
+def load_data(url):
+    df = pd.read_csv(url)
+    return df
+
+df = load_data("df_credit_dash_score.csv")
+features = list(df.iloc[:, 2:-2].columns)
+
+#---------------------------------#
+# Sidebar
 col1 = st.sidebar
-#---------------------------------#
-df = pd.read_csv("data/traited/df_credit_dash.csv")
-features = list(df.iloc[:, 2:].columns)
-#---------------------------------#
-# Sidebar + Main panel
 image = Image.open('pretadepenser.png')
 col1.image(image, width = 200, use_column_width=True)
 
@@ -38,7 +38,9 @@ selected_client = col1.selectbox('Identifiant Client', list(df['SK_ID_CURR']))
 selected_features = col1.multiselect('Variables', features)
 
 #---------------------------------#
+# Main panel
 col2, col3 = st.columns((2,1))
+
 col31, col32 = col3.columns((1,3))
 image = Image.open('OC.png')
 col31.image(image, width = 100, use_column_width=True)
@@ -51,18 +53,14 @@ Ce tableau de bord prédit la probabilité qu'un client rembourse son crédit et
 """)
 
 #-----------------------------------#
-# Reads in saved classification model
-# load_clf = pickle.load(open('lgbm_model.pkl', 'rb'))
+# Informations du client sélectionné
+X = df.loc[df['SK_ID_CURR'] == selected_client, features]
 
-# # Apply model to make predictions
-X = df.loc[df['SK_ID_CURR'] == selected_client, df.columns[2:]]
-# prediction = load_clf.predict(X)
-# prediction_proba = load_clf.predict_proba(X)
-
-
+# Call API model for prediction
 api_url = 'http://localhost:5000/predict'
-data = {'client_id': selected_client}
-print(data)
+
+data = {'client_feat': X.to_json(orient="records")}
+
 response = requests.get(api_url, json=data)
 
 if response.status_code == 200:
@@ -75,13 +73,13 @@ else:
     print("Erreur lors de l'appel de l'API")
     
 #-----------------------------------#
+# Probabilité de remboursement + état de la demande
 decision = "crédit accordé" if prediction == 0 else "crédit refusé" 
-
 proba_remboursement = round(prediction_proba * 100)
 
 col21, col22 = col2.columns((1,1))
-col21.write("<span style='font-size: 24px'> <b>Client : <span style='color: gray; font-size:1.1em'> {} </span> </b></span>".format(str(selected_client)), unsafe_allow_html=True)
 
+col21.write("<span style='font-size: 24px'> <b>Client : <span style='color: gray; font-size:1.1em'> {} </span> </b></span>".format(str(selected_client)), unsafe_allow_html=True)
 if prediction == 1 :
     col21.write("<span style='font-size: 24px'> <b>Probabilité de remboursement : \n  <span style='color: red; font-size:1.2em'> {} % </span> </b></span>".format(str(proba_remboursement)), unsafe_allow_html=True)
     col21.write("<span style='font-size: 24px'> <b> Etat de la demande : <span style='color: red; font-size:1.2em'> {} </span> </b></span>".format(decision), unsafe_allow_html=True) 
@@ -111,31 +109,30 @@ fig = go.Figure(go.Indicator(
             'bar': {'color': "red" if prediction == 1 else "blue" ,  'thickness': 0.5}}))
 fig.update_layout(width=350, height=350)
 col22.plotly_chart(fig)
-
 st.write('---')
-col2, col3 = st.columns((2,1))
+
 #-------------------------------#
+col2, col3 = st.columns((2,1))
+
+# Profil client
 col2.header('Profil client: ' + str(selected_client))
 col2.markdown(""" 
 * <span style="color:red">Les variables en rouge **défavorisent** l'accord du crédit</span>.  
 * <span style="color:blue"> Les variables en bleu  **favorisent** l'accord du crédit</span>. 
 """, unsafe_allow_html=True)
-# Explaining the model's predictions using SHAP values
-# https://github.com/slundberg/shap
-# explainer = shap.Explainer(load_clf["clf"])
-# X_ = pd.DataFrame(load_clf['scaler'].transform(X), columns = X.columns)
-# shap_values = explainer(X_)[:, :, 1]
-# shap_values.data = X.values
 
 explanation = shap.Explanation(values=np.array(shap_values["values"]),
                                base_values=shap_values["base_values"],
                                data=np.array(shap_values["data"]))
+explanation.feature_names = features
+
 fig, ax = plt.subplots()
 ax.set_title('Feature importance based on SHAP values')
 shap.plots.waterfall(explanation)
 col2.pyplot(fig, bbox_inches='tight')
 
 #---------------------------
+# Feature importance globale
 col3.header('Feature importance globale')
 col3.markdown(""" Les variables les plus importantes pour le modèle de prédiction sont: 
 * **Ext_source_1, Ext_source_2, Ext_source_3**: 3 scores normalisés d'une souce extérieur
@@ -144,7 +141,7 @@ col3.markdown(""" Les variables les plus importantes pour le modèle de prédict
 * **PREV_DAYS_DECISION_MIN**: Combien de jours avant la décision concernant les demandes précédentes
 * **PREV_NAME_PRODUCT_TYPE_XNA_MEAN**: 
 """, unsafe_allow_html=True)
-# Sidebar + Main panel
+
 image = Image.open('lgbm_importances.png')
 col3.image(image, width = 200, use_column_width=True)
 st.write('---')
@@ -154,9 +151,8 @@ st.write('---')
 col2.header("Positionnement du client par rapport à l'ensemble de clients")
 col2.markdown("La ligne noire corréspond à la valeur du client séléctionné")
 
-df["TARGET_"] = df["TARGET"].apply(lambda x: "Client à Risque" if x else "Client fiable")
-
-
+#---------------------
+# histogramme des variables sélectionnées : Rouge pour les clients à risque et bleu pour les clients fiables
 for feature in selected_features: 
     # The individual's value stored in a variable called "individual_value"
     individual_value = X[feature].values[0]
@@ -194,9 +190,8 @@ for feature in selected_features:
     col2.plotly_chart(fig)
 
 #--------------------------------
-load_clf = pickle.load(open('lgbm_model.pkl', 'rb'))
-X_ = df.iloc[:, 2:-1]
-df['score'] = load_clf.predict_proba(X_)[:, 0]
+# plot 2D entre deux variables sélectionnées en fonction du score client du rouge au bleu.
+# Le noir pour le client sélectionné. 
 
 # Parcourir la liste pour générer tous les couples de features selectionnées
 couples_feat = []
