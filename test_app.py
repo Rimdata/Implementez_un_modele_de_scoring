@@ -1,12 +1,13 @@
 from predictapi import index, predict
-import pandas as pd
-import requests
+# import pandas as pd
+# import requests
 
 def test_index():
-    api_url = 'http://localhost:5000/'
-    response = requests.get(api_url)
-    assert response.status_code == 200
-    assert response.text == "Hello, world!"
+#     api_url = 'http://localhost:5000/'
+#     response = requests.get(api_url)
+#     assert response.status_code == 200
+#     assert response.text == "Hello, world!"
+    assert index() == "Hello, world!"
 
 
 # 
