@@ -18,6 +18,7 @@ Ce répertoire contient les notebooks de modélisation pour le projet de scoring
 Voici une description des différents fichiers et dossiers présents :
 
 * **BAHROUN_Rim_1_notebook_042023.ipynb** : Agrégation des données
+  * Source des données: https://www.kaggle.com/competitions/home-credit-default-risk/overview
   * Agrégation des données afin d'obtenir un seul jeu de données.
   * Création de quelques variables intéressantes pour le projet.
   * Correction des valeurs abérrantes.
