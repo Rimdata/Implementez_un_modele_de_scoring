@@ -52,3 +52,14 @@ Voici une description des différents fichiers et dossiers présents :
 
 * **BAHROUN_Rim_6_notebook_042023.ipynb** : Data Drift
   * Analyse du data drift avec la librairie Evidently
+
+##  Compétences travaillées
+* Définir et mettre en œuvre une stratégie de suivi de la performance d’un modèle
+* Évaluer les performances des modèles d’apprentissage supervisé
+* Utiliser un logiciel de version de code pour assurer l’intégration du modèle
+* Définir la stratégie d’élaboration d’un modèle d’apprentissage supervisé
+* Réaliser un dashboard pour présenter son travail de modélisation
+* Rédiger une note méthodologique afin de communiquer sa démarche de modélisation
+* Présenter son travail de modélisation à l'oral
+* Déployer un modèle via une API dans le Web
+* Définir et mettre en œuvre un pipeline d’entraînement des modèles
